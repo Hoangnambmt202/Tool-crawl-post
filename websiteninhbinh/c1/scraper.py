@@ -109,8 +109,8 @@ class VspProducts:
         if d:
             comp_d = d.date() if hasattr(d, 'hour') else d
             if comp_d < config.FROM_DATE:
-                print(f"Bài cũ ({d}) < {config.FROM_DATE}")
-            # Decide whether to save or not? Original saves but logs.
+                print(f"Bài cũ ({d}) < {config.FROM_DATE}. Bỏ qua không xử lý.")
+                return
 
         current_cam.date_publish = d if d else None
 
@@ -193,14 +193,23 @@ class VspProducts:
                         content_type = res.headers.get("content-type", "")
 
                         parsed = urlparse(file_url)
-                        file_name = os.path.basename(parsed.path)
-                        if not file_name:
-                            file_name = f"doc_{int(time.time())}.file"
-
+                        import re
+                        safe_title = current_cam.name.strip()
+                        safe_title = re.sub(r'\s+', '_', safe_title)
+                        safe_title = re.sub(r'[\\/*?:"<>|]', '', safe_title)
+                        
+                        original_ext = os.path.splitext(parsed.path)[1]
+                        if not original_ext:
+                            original_ext = ".pdf"
+                            
+                        file_name = f"{safe_title}{original_ext}"
                         local_path = os.path.join(doc_dir, file_name)
-                        if os.path.exists(local_path):
-                            file_name = f"{int(time.time())}_{file_name}"
+                        
+                        counter = 1
+                        while os.path.exists(local_path):
+                            file_name = f"{safe_title}_{counter}{original_ext}"
                             local_path = os.path.join(doc_dir, file_name)
+                            counter += 1
 
                         with open(local_path, "wb") as f:
                             for chunk in res.iter_content(8192):

@@ -239,12 +239,25 @@ def _safe_filename_from_url(img_url: str, max_len: int = 100) -> str:
     return f"{stem}-{h}{ext}"
 
 
-def download_file(file_url: str, tmp_dir: str = TMP_DIR) -> str:
+def download_file(file_url: str, tmp_dir: str = TMP_DIR, custom_name: str = "") -> str:
     ensure_dir(tmp_dir)
 
-    filename = _safe_filename_from_url(file_url)
-    # nếu thiếu ext thì vẫn ok (WP nhận), nhưng bạn có thể ép ext theo URL nếu muốn
-    filename2 = f"{os.path.splitext(filename)[0]}-{uuid.uuid4().hex[:8]}{os.path.splitext(filename)[1] or ''}"
+    if custom_name:
+        import re
+
+        safe_title = custom_name.strip()
+        safe_title = re.sub(r"\s+", "_", safe_title)
+        safe_title = re.sub(r'[\\/*?:"<>|]', "", safe_title)
+
+        parsed = urlparse(file_url)
+        ext = os.path.splitext(parsed.path)[1]
+        if not ext:
+            ext = ".pdf"
+        filename2 = f"{safe_title}_{uuid.uuid4().hex[:4]}{ext}"
+    else:
+        filename = _safe_filename_from_url(file_url)
+        filename2 = f"{os.path.splitext(filename)[0]}-{uuid.uuid4().hex[:8]}{os.path.splitext(filename)[1] or ''}"
+
     file_path = os.path.join(tmp_dir, filename2)
 
     r = http_session.get(file_url, timeout=120, stream=True)
@@ -452,7 +465,7 @@ def wp_media_upload_pick_insert2(driver, wait, file_path: str) -> int:
     )
 
     stem = os.path.splitext(os.path.basename(file_path))[0]
-    stem_words = [w.lower() for w in re.split(r"[-_\s]", stem) if w.strip()]
+    stem_words = [w.lower() for w in re.split(r"[-_]", stem) if w.strip()]
     att_id = None
 
     # tìm đúng attachment theo aria-label
@@ -511,7 +524,7 @@ def wp_media_upload_pick_insert(driver, wait: WebDriverWait, file_path: str) -> 
     )
 
     stem = os.path.splitext(os.path.basename(file_path))[0]
-    stem_words = [w.lower() for w in re.split(r"[-_\s]", stem) if w.strip()]
+    stem_words = [w.lower() for w in re.split(r"[-_]", stem) if w.strip()]
     att_id = None
 
     # 1) tìm đúng item theo aria-label chứa stem
@@ -569,9 +582,6 @@ def wp_media_upload_pick_insert(driver, wait: WebDriverWait, file_path: str) -> 
 
       const btn = document.querySelector('button.media-button-insert');
       if (btn) btn.disabled = false;
-      document.querySelectorAll('.media-modal .media-toolbar-primary button').forEach(b => {
-          b.disabled = false;
-      });
 
       return true;
     } catch(e) { return false; }
@@ -598,13 +608,8 @@ def wp_media_upload_pick_insert(driver, wait: WebDriverWait, file_path: str) -> 
             try:
                 if not b.is_displayed():
                     continue
-                if b.get_attribute("disabled") and str(b.get_attribute("disabled")).lower() != "false":
+                if b.get_attribute("disabled"):
                     continue
-
-                cls = (b.get_attribute("class") or "").lower()
-                if "media-button-insert" in cls or "media-button-select" in cls:
-                    return b
-
                 txt = (
                     ((b.text or "") + " " + (b.get_attribute("value") or ""))
                     .strip()
@@ -616,9 +621,6 @@ def wp_media_upload_pick_insert(driver, wait: WebDriverWait, file_path: str) -> 
                     or ("insert" in txt)
                     or ("select" in txt)
                     or ("choose" in txt)
-                    or ("thêm" in txt)
-                    or ("dùng" in txt)
-                    or ("sử dụng" in txt)
                 ):
                     return b
             except:
@@ -629,7 +631,7 @@ def wp_media_upload_pick_insert(driver, wait: WebDriverWait, file_path: str) -> 
             b = driver.find_element(
                 By.CSS_SELECTOR, ".media-modal .media-toolbar-primary button"
             )
-            if b.is_displayed() and not (b.get_attribute("disabled") and str(b.get_attribute("disabled")).lower() != "false"):
+            if b.is_displayed() and not b.get_attribute("disabled"):
                 return b
         except:
             pass
@@ -654,17 +656,12 @@ def wp_media_upload_pick_insert(driver, wait: WebDriverWait, file_path: str) -> 
             print("DEBUG TOOLBAR:", toolbar.text[:400])
         except:
             print("DEBUG TOOLBAR: cannot read")
-        
-        print("⚠️ Warning: Không tìm thấy nút insert_btn, bỏ qua chèn ảnh này.")
-        try:
-            _close_media_modal(driver)
-        except:
-            pass
-        return att_id
+        # raise TimeoutException("Không tìm thấy nút 'Chèn vào bài viết/Chọn' trong media modal")
     else:
         safe_js_click(driver, insert_btn)
-        # đợi modal đóng
-        wait.until(EC.invisibility_of_element_located((By.CSS_SELECTOR, ".media-modal")))
+
+    # đợi modal đóng
+    wait.until(EC.invisibility_of_element_located((By.CSS_SELECTOR, ".media-modal")))
 
     return att_id
 
@@ -777,13 +774,8 @@ def set_featured_image_by_id(driver, wait: WebDriverWait, attachment_id: int) ->
             try:
                 if not b.is_displayed():
                     continue
-                if b.get_attribute("disabled") and str(b.get_attribute("disabled")).lower() != "false":
+                if b.get_attribute("disabled"):
                     continue
-                
-                cls = (b.get_attribute("class") or "").lower()
-                if "media-button-select" in cls:
-                    return b
-
                 txt = (
                     ((b.text or "") + " " + (b.get_attribute("value") or ""))
                     .strip()
@@ -803,6 +795,7 @@ def set_featured_image_by_id(driver, wait: WebDriverWait, attachment_id: int) ->
                     return b
 
                 # fallback: nếu là button-primary và đang hiển thị thì lấy luôn
+                cls = (b.get_attribute("class") or "").lower()
                 if "button-primary" in cls:
                     return b
             except StaleElementReferenceException:
@@ -937,21 +930,11 @@ def select_category_by_name(driver, wait: WebDriverWait, cat_name: str) -> bool:
     wait.until(EC.presence_of_element_located((By.ID, "categorychecklist")))
     labels = driver.find_elements(By.CSS_SELECTOR, "#categorychecklist label")
 
-    import unicodedata
-    def norm_vn(text):
-        if not text:
-            return ""
-        text = unicodedata.normalize("NFC", text).lower()
-        text = text.replace("oá", "óa").replace("oà", "òa").replace("oả", "ỏa").replace("oã", "õa").replace("oạ", "ọa")
-        text = text.replace("uý", "úy").replace("uỳ", "ùy").replace("uỷ", "ủy").replace("uỹ", "ũy").replace("uỵ", "ụy")
-        text = text.replace("iá", "ía").replace("ià", "ìa").replace("iả", "ỉa").replace("iã", "ĩa").replace("iạ", "ịa")
-        return text
-
-    target_cats = [norm_vn(c.strip()) for c in cat_name.split(";") if c.strip()]
+    target_cats = [c.strip().lower() for c in cat_name.split(";") if c.strip()]
     found_any = False
 
     for lb in labels:
-        lb_text = norm_vn((lb.text or "").strip())
+        lb_text = (lb.text or "").strip().lower()
         if lb_text in target_cats:
             print("✅ CATEGORY MATCH:", lb.text)
             cb = lb.find_element(By.TAG_NAME, "input")
@@ -1054,12 +1037,6 @@ def wp_insert_content_with_images(
                     print("⏭️ SKIP IMG (social share button):", img_abs)
                     continue
 
-                # Skip downloading/uploading emojis, directly insert original <img> tag
-                if "emoji" in img_abs.lower() and ("fbcdn" in img_abs.lower() or "facebook" in img_abs.lower() or "wp-emoji" in img_abs.lower() or "s.w.org/images/core/emoji" in img_abs.lower()):
-                    print("⏭️ SKIP UPLOAD IMG (emoji) -> Insert directly:", img_abs)
-                    wp_editor_insert_html(driver, str(child))
-                    continue
-
                 try:
                     local_path = download_image(img_abs)
                 except Exception as e:
@@ -1071,13 +1048,6 @@ def wp_insert_content_with_images(
                     att_id = wp_media_upload_pick_insert(driver, wait, local_path)
                     inserted_ids.append(int(att_id))
                     wp_editor_focus_end(driver)
-                except Exception as e:
-                    print("⚠️ SKIP IMG (upload/insert failed):", img_abs, "|", e)
-                    # Close media modal to avoid blocking subsequent interactions
-                    try:
-                        _close_media_modal(driver)
-                    except:
-                        pass
                 finally:
                     if local_path and os.path.isfile(local_path):
                         os.remove(local_path)
@@ -1086,57 +1056,9 @@ def wp_insert_content_with_images(
 
             # ====== FILE DOWNLOAD LINK ======
             if tag_name == "a" and is_download_link(child):
-                href = (child.get("href") or "").strip()
-                if not href:
-                    continue
-
-                file_abs = normalize_img_url(
-                    href, base_source
-                )  # hàm này thực ra normalize URL chung, dùng lại ok
-                link_text = child.get_text(" ", strip=True) or "Tập tin đính kèm"
-
-                try:
-                    local_path = download_file(file_abs)
-                    wp_open_add_media_modal(driver, wait)
-
-                    # Upload + insert (đối với PDF/DOC, WP thường chèn link vào bài)
-                    att_id = wp_media_upload_pick_insert(driver, wait, local_path)
-                    inserted_ids.append(int(att_id))
-
-                    wp_editor_focus_end(driver)
-
-                    # (TUỲ CHỌN) đổi text của link vừa chèn thành text gốc
-                    driver.execute_script(
-                        """
-                    try {
-                      const desired = arguments[0];
-                      // lấy link cuối cùng trong editor (tinymce hoặc textarea)
-                      if (window.tinymce && tinymce.get('content')) {
-                        const ed = tinymce.get('content');
-                        const body = ed.getBody();
-                        const links = body.querySelectorAll('a');
-                        if (links && links.length) {
-                          links[links.length-1].textContent = desired;
-                          ed.save();
-                        }
-                        return;
-                      }
-                    } catch(e) {}
-                    """,
-                        link_text,
-                    )
-                except Exception as e:
-                    print("⚠️ SKIP FILE (upload failed):", file_abs, "|", e)
-                    try:
-                        _close_media_modal(driver)
-                    except:
-                        pass
-                finally:
-                    try:
-                        if local_path and os.path.isfile(local_path):
-                            os.remove(local_path)
-                    except:
-                        pass
+                # Không xử lý upload để tránh chèn gview vào trong wp_editor mce_panel.
+                # Giữ nguyên thẻ <a> trỏ vào remote cho văn bản, toolset đính kèm đã xử lý upload gốc rồi.
+                wp_editor_insert_html(driver, str(child))
                 continue
 
             # ====== TAG KHÁC ======
@@ -1153,13 +1075,17 @@ def wp_insert_content_with_images(
 # =========================
 # DUPLICATE TITLE GUARD
 # =========================
-def wp_post_exists_by_title(driver, wait: WebDriverWait, base: str, title: str) -> bool:
+def wp_post_exists_by_title(
+    driver, wait: WebDriverWait, base: str, title: str, post_type: str = "post"
+) -> bool:
     title = (title or "").strip()
     if not title:
         return False
 
     search_url = (
-        base + "wp-admin/edit.php?post_type=post&post_status=all&s=" + quote_plus(title)
+        base
+        + f"wp-admin/edit.php?post_type={post_type}&post_status=all&s="
+        + quote_plus(title)
     )
     driver.get(search_url)
     wait.until(EC.presence_of_element_located((By.ID, "the-list")))
@@ -1167,49 +1093,15 @@ def wp_post_exists_by_title(driver, wait: WebDriverWait, base: str, title: str) 
     print("[DUPLICATE CHECK]", title)
     print("SEARCH URL:", search_url)
 
-    def get_matches():
-        matched_rows = []
-        rows = driver.find_elements(By.CSS_SELECTOR, "#the-list tr")
-        for r in rows:
-            els = r.find_elements(By.CSS_SELECTOR, "a.row-title")
-            if not els:
-                continue
-            t = (els[0].text or "").strip()
-            # So sánh tiêu đề để tìm bài tương tự / trùng lặp
-            if t.lower() == title.lower():
-                matched_rows.append(r)
-        return matched_rows
-
-    matches = get_matches()
-
-    if len(matches) > 1:
-        print(f"⚠️ Phát hiện {len(matches)} bài viết có cùng tiêu đề. Tiến hành xóa dư thừa, giữ 1 bài duy nhất.")
-        for row in matches[1:]:
-            try:
-                cb = row.find_element(By.CSS_SELECTOR, "th.check-column input[type='checkbox']")
-                if not cb.is_selected():
-                    driver.execute_script("arguments[0].click();", cb)
-            except:
-                pass
-        
-        try:
-            from selenium.webdriver.support.ui import Select
-            bulk_select = driver.find_element(By.ID, "bulk-action-selector-top")
-            Select(bulk_select).select_by_value("trash")
-            
-            apply_btn = driver.find_element(By.ID, "doaction")
-            driver.execute_script("arguments[0].click();", apply_btn)
-            time.sleep(3)
-            print("Đã dọn dẹp xong bài trùng.")
-        except Exception as e:
-            print("❌ Lỗi khi dọn dẹp bài trùng:", e)
-
-        return True
-    
-    elif len(matches) == 1:
-        print("❌ DUPLICATE FOUND: Đã tồn tại 1 bài.")
-        return True
-
+    rows = driver.find_elements(By.CSS_SELECTOR, "#the-list tr")
+    for r in rows:
+        els = r.find_elements(By.CSS_SELECTOR, "a.row-title")
+        if not els:
+            continue
+        t = (els[0].text or "").strip()
+        if t.lower() == title.lower():
+            print("❌ DUPLICATE FOUND:", t)
+            return True
     return False
 
 
@@ -1368,6 +1260,21 @@ class NewsPoster:
             base_source = get_base(anew[6]) if len(anew) > 6 else ""
             base_target = (anew[7] or "").strip() if len(anew) > 7 else ""
 
+            import json
+            import re
+
+            vanban_meta = {}
+            match = re.search(
+                r"<!--\s*VANBAN_META:\s*({.*?})\s*-->", content_html, re.DOTALL
+            )
+            if match:
+                try:
+                    vanban_meta = json.loads(match.group(1))
+                    # Remove the comment so it doesn't show up in the wp editor
+                    content_html = content_html.replace(match.group(0), "")
+                except:
+                    pass
+
             res["title"] = title
             res["post_date"] = str(anew[12]) if (len(anew) > 12 and anew[12]) else ""
 
@@ -1381,13 +1288,19 @@ class NewsPoster:
 
             # duplicate
             res["step"] = "duplicate_check"
-            if wp_post_exists_by_title(self.driver, self.wait, base, title):
+            post_type_param = "van-ban" if vanban_meta else "post"
+            if wp_post_exists_by_title(
+                self.driver, self.wait, base, title, post_type=post_type_param
+            ):
                 res["status"] = "SKIP_DUPLICATE"
                 return res
 
             # open editor
             res["step"] = "open_editor"
-            create_url = base + "wp-admin/post-new.php"
+            if vanban_meta:
+                create_url = base + "wp-admin/post-new.php?post_type=van-ban"
+            else:
+                create_url = base + "wp-admin/post-new.php"
             self.driver.get(create_url)
 
             # 🔥 ENSURE NEW POST 🔥
@@ -1427,6 +1340,98 @@ class NewsPoster:
             } catch(e) {}
             """)
 
+            # Fill custom fields for van-ban
+            res["step"] = "fill_vanban_custom_fields"
+            so_hieu = vanban_meta.get("so_ky_hieu", "")
+            if so_hieu:
+                try:
+                    so_hieu_el = self.driver.find_element(
+                        By.CSS_SELECTOR, "input[name='wpcf[vb-so-ky-hieu]']"
+                    )
+                    so_hieu_el.clear()
+                    so_hieu_el.send_keys(so_hieu)
+                except:
+                    pass
+
+            nguoi_ky = vanban_meta.get("nguoi_ky", "")
+            co_quan = vanban_meta.get("co_quan_ban_hanh", "")
+            if nguoi_ky or co_quan:
+                trich_yeu_html = f"<p><strong>Cơ quan ban hành:</strong> {co_quan}<br/><strong>Người ký:</strong> {nguoi_ky}</p>"
+                self.driver.execute_script(
+                    """
+                const html = arguments[0];
+                try {
+                    if (window.tinymce && tinymce.get('wpcf-vb-trich-yeu')) {
+                        tinymce.get('wpcf-vb-trich-yeu').setContent(html);
+                        tinymce.get('wpcf-vb-trich-yeu').save();
+                    } else {
+                        const ta = document.getElementById('wpcf-vb-trich-yeu');
+                        if (ta) ta.value = html;
+                    }
+                } catch(e) {}
+                """,
+                    trich_yeu_html,
+                )
+
+            pub_date = str(anew[12])[:10] if (len(anew) > 12 and anew[12]) else ""
+            if pub_date:
+                try:
+                    date_el = self.driver.find_element(
+                        By.CSS_SELECTOR,
+                        "input[name='wpcf[vb-ngay-ban-hanh][datepicker]']",
+                    )
+                    self.driver.execute_script(
+                        "arguments[0].value = arguments[1];", date_el, pub_date
+                    )
+                    display_el = self.driver.find_element(
+                        By.CSS_SELECTOR,
+                        "input[name='wpcf[vb-ngay-ban-hanh][display-only]']",
+                    )
+                    self.driver.execute_script(
+                        "arguments[0].value = arguments[1];", display_el, pub_date
+                    )
+                except:
+                    pass
+
+            file_links = vanban_meta.get("file_links", [])
+            if file_links:
+                try:
+                    file_url = file_links[0]
+                    # Upload file bằng toolset button
+                    local_tmp = download_file(file_url, custom_name=title)
+
+                    upload_btn = self.driver.find_element(
+                        By.CSS_SELECTOR, "button.js-wpt-file-upload"
+                    )
+                    safe_js_click(self.driver, upload_btn)
+                    time.sleep(1)
+
+                    wp_media_upload_pick_insert(self.driver, self.wait, local_tmp)
+                    time.sleep(1)
+
+                    if os.path.exists(local_tmp):
+                        os.remove(local_tmp)
+
+                    if len(file_links) > 1:
+                        file_input = self.driver.find_element(
+                            By.CSS_SELECTOR, "input[name='wpcf[vb-file-dinh-kem]']"
+                        )
+                        existing = file_input.get_attribute("value") or ""
+                        others = "\n".join(file_links[1:])
+                        file_input.clear()
+                        file_input.send_keys(existing + "\n" + others)
+                except Exception as e:
+                    print(f"Lỗi tải & gán file wpcf[vb-file-dinh-kem]: {e}")
+                    # Fallback chỉ send keys
+                    try:
+                        file_input = self.driver.find_element(
+                            By.CSS_SELECTOR, "input[name='wpcf[vb-file-dinh-kem]']"
+                        )
+                        file_input.clear()
+                        file_input.send_keys("\n".join(file_links))
+                    except:
+                        pass
+
             # insert content + images
             res["step"] = "insert_content"
             uploaded_attachment_ids = wp_insert_content_with_images(
@@ -1447,11 +1452,29 @@ class NewsPoster:
                 )
                 set_wp_publish_datetime(self.driver, self.wait, dt)
 
-            # category
+            # category for normal post vs taxonomy for van-ban
             cat_name = (anew[9] or "").strip() if len(anew) > 9 else ""
             if cat_name:
                 res["step"] = "select_category"
-                select_category_by_name(self.driver, self.wait, cat_name)
+                try:
+                    # taxonomy checkbox is inside #loai-van-banchecklist
+                    labels = self.driver.find_elements(
+                        By.CSS_SELECTOR, "#loai-van-banchecklist label"
+                    )
+                    target_cats = [
+                        c.strip().lower() for c in cat_name.split(",") if c.strip()
+                    ]
+                    found_in_taxonomy = False
+                    for lb in labels:
+                        if (lb.text or "").strip().lower() in target_cats:
+                            cb = lb.find_element(By.TAG_NAME, "input")
+                            if not cb.is_selected():
+                                self.driver.execute_script("arguments[0].click();", cb)
+                            found_in_taxonomy = True
+                    if not found_in_taxonomy:
+                        select_category_by_name(self.driver, self.wait, cat_name)
+                except:
+                    select_category_by_name(self.driver, self.wait, cat_name)
 
             # featured image
             res["featured_ok"] = ""

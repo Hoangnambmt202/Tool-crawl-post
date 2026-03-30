@@ -112,6 +112,44 @@ class HanamParser(BaseParser):
                         count += 1
             handled = True
 
+        # 4. content_news
+        content_news = soup.select("div.content_news aside.content-new ul.media-list li.media")
+        if content_news:
+            print(f"--> [HanamParser] content_news | {len(content_news)} bài")
+            for item in content_news:
+                a_tag = item.select_one("a.pull-left[href]")
+                if not a_tag:
+                    a_tag = item.select_one("a[href]")
+                if not a_tag:
+                    continue
+
+                href = urljoin(scraper.base, a_tag.get("href"))
+                
+                title_tag = item.select_one("div.media-body h4.media-heading.title-content-new")
+                title = utils.clean_spaces(title_tag.get_text()) if title_tag else utils.clean_spaces(a_tag.get_text())
+                if not title:
+                    continue
+
+                img_tag = item.select_one("img.media-object[src]")
+                thumb = urljoin(scraper.base, img_tag["src"]) if img_tag else ""
+
+                excerpt = ""
+                media_body = item.select_one("div.media-body")
+                if media_body:
+                    for tag_to_remove in ["h4", "div"]:
+                        for t in media_body.find_all(tag_to_remove):
+                            t.decompose()
+                    excerpt = utils.clean_spaces(media_body.get_text())
+
+                if hp.check_cam_url(scraper.url_id, href, title):
+                    cam = scraper.camlist.create_cam(title, href, scraper.cat_id)
+                    cam.short = excerpt
+                    cam.thumb = thumb
+                    if scraper.camlist.add_cam(cam):
+                        scraper.url_links.append(href)
+                        count += 1
+            handled = True
+
         if handled:
             print(f"--> [HanamParser] Thêm {count} bài.")
             return True
@@ -143,6 +181,44 @@ class HanamParser(BaseParser):
                 if h4:
                     current_cam.name = utils.clean_spaces(h4.get_text())
                 tag_content = detail
+
+        # Case 4: content_news detail
+        if not tag_content:
+            detail = soup.select_one("div.content_news")
+            if detail:
+                print("   -> [HanamParser] Cấu trúc: content_news")
+                title_tag = detail.select_one("div.title_news")
+                if title_tag:
+                    current_cam.name = utils.clean_spaces(title_tag.get_text())
+                
+                media_news = detail.select_one("div.media.news")
+                if media_news:
+                    tag_content = media_news
+                else:
+                    tag_content = detail
+
+                # Process attachments from the entire detail block
+                file_links = []
+                for a_el in detail.select("a[href$='.pdf'], a[href$='.doc'], a[href$='.docx'], a[href$='.xls'], a[href$='.xlsx'], a[href$='.rar'], a[href$='.zip']"):
+                    href_val = a_el.get("href", "")
+                    if href_val:
+                        full_link = urljoin(scraper.base, href_val)
+                        text = utils.clean_spaces(a_el.get_text()) or "Tập tin đính kèm"
+                        if not any(existing[1] == full_link for existing in file_links):
+                            file_links.append((text, full_link))
+                
+                if file_links:
+                    p = soup.new_tag("p")
+                    p.string = "Tài liệu đính kèm:"
+                    tag_content.append(p)
+                    ul = soup.new_tag("ul")
+                    for name, link in file_links:
+                        li = soup.new_tag("li")
+                        a_a = soup.new_tag("a", href=link, target="_blank")
+                        a_a.string = name
+                        li.append(a_a)
+                        ul.append(li)
+                    tag_content.append(ul)
 
         if tag_content:
             d = utils.parse_vn_date_from_soup(soup)

@@ -16,11 +16,11 @@ class Type5Parser(BaseParser):
         """
         # Check for new structure first (user provided)
         section_new = soup.select_one("section.Article-Detail-listType5")
-        if section_new and section_new.get("id") == "section23":
+        if section_new:
             items = section_new.select("div.listType6.news-item")
             if items:
                 print(
-                    f"--> [Type5Parser] Phát hiện cấu trúc mới: Article-Detail-listType5 section23 | {len(items)} bài"
+                    f"--> [Type5Parser] Phát hiện cấu trúc mới: Article-Detail-listType5 | {len(items)} bài"
                 )
                 count_new = 0
 
@@ -46,6 +46,7 @@ class Type5Parser(BaseParser):
                         pub_date = utils.parse_vn_date_any(date_text)
 
                     if pub_date and pub_date < FROM_DATE:
+                        print(f"   [Type5] Bỏ qua vì bài cũ ({pub_date}): {title[:40]}...")
                         continue
 
                     # Image
@@ -66,6 +67,7 @@ class Type5Parser(BaseParser):
 
                     # Check duplicate
                     if not hp.check_cam_url(scraper.url_id, full_url, title):
+                        print(f"   [Type5] Đã có trong DB: {title[:40]}...")
                         continue
 
                     # Create object
@@ -173,8 +175,12 @@ class Type5Parser(BaseParser):
             current_cam.name = utils.clean_spaces(h1.get_text())
 
         brief_content = article.select_one("div.brief")
+        content_detail = article.select_one("div.content-detail")
+        
         if brief_content:
             tag_content = brief_content
+        elif content_detail:
+            tag_content = content_detail
         else:
             tag_content = article
 

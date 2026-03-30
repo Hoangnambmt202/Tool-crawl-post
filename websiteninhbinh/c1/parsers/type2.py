@@ -142,11 +142,15 @@ class Type2Parser(BaseParser):
             for t in article.select(sel):
                 t.decompose()
 
-        # Lấy phần content nằm trong div.brief (vì nó chứa toàn bộ nội dung thật)
-        # Không thay đổi/xóa cấu trúc bên trong div.brief để lưu nguyên vẹn vào DB
+        # Lấy phần content nằm trong div.brief (hoặc div.content-detail với cấu trúc mới)
+        # Không thay đổi/xóa cấu trúc bên trong nó để lưu nguyên vẹn vào DB
         brief_content = article.select_one("div.brief")
+        content_detail = article.select_one("div.content-detail")
+        
         if brief_content:
             tag_content = brief_content
+        elif content_detail:
+            tag_content = content_detail
         else:
             tag_content = article
 

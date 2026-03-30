@@ -156,10 +156,15 @@ class TypeDefaultParser(BaseParser):
 
         # CONTENT
         # Primary: div.brief
+        # Secondary: div.content-detail (cho cấu trúc mới)
         # Fallback: article
         brief_content = article.select_one("div.brief")
+        content_detail = article.select_one("div.content-detail")
+        
         if brief_content:
             tag_content = brief_content
+        elif content_detail:
+            tag_content = content_detail
         else:
             tag_content = article
 

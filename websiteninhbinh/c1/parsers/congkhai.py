@@ -310,7 +310,25 @@ class CongKhaiParser(BaseParser):
                     except Exception:
                         pass
 
-            # Build content HTML
+            # Build content HTML and JSON for custom fields
+            metadata = {
+                "so_ky_hieu": "",
+                "nguoi_ky": "",
+                "co_quan_ban_hanh": "",
+                "file_links": []
+            }
+            
+            for tr in legal_detail.select("tr"):
+                cells = tr.select("td, th")
+                for td_idx, td in enumerate(cells):
+                    text = td.get_text().strip()
+                    if text == "Số hiệu" and td_idx + 1 < len(cells):
+                        metadata["so_ky_hieu"] = cells[td_idx + 1].get_text().strip()
+                    elif text == "Người ký" and td_idx + 1 < len(cells):
+                        metadata["nguoi_ky"] = cells[td_idx + 1].get_text().strip()
+                    elif text == "Cơ quan ban hành" and td_idx + 1 < len(cells):
+                        metadata["co_quan_ban_hanh"] = cells[td_idx + 1].get_text().strip()
+
             tag_content = soup.new_tag("div")
 
             if file_links:
@@ -325,12 +343,18 @@ class CongKhaiParser(BaseParser):
                     a_el.string = name if name else "Tải về"
                     li.append(a_el)
                     ul.append(li)
+                    metadata["file_links"].append(link)
                 tag_content.append(ul)
             else:
                 # Fallback: grab the detail-content div entirely
                 content_div = legal_detail.select_one("div.detail-content")
                 if content_div:
                     tag_content = content_div
+            
+            import json
+            from bs4 import Comment
+            json_str = json.dumps(metadata, ensure_ascii=False)
+            tag_content.append(Comment(f" VANBAN_META: {json_str} "))
 
             scraper.process_content(current_cam, tag_content, d)
             return True

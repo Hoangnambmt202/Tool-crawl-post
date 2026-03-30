@@ -104,7 +104,7 @@ def run_from_excel(
 if __name__ == "__main__":
     # Example usage
     excel_file = (
-        r"D:\WORKSPACE_CODE\Projects\Web\folder\websiteninhbinh\danhsachweb - Copy.xlsx"
+        r"D:\WORKSPACE_CODE\Projects\Web\folder\websiteninhbinh\danhsachweb.xlsx"
     )
     if os.path.exists(excel_file):
         run_from_excel(excel_file, sheet_name=None)
